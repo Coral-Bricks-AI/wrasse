@@ -1,0 +1,69 @@
+name: wrasse review
+description: AI code review that reads the code before it comments
+author: CoralBricks
+
+branding:
+  icon: eye
+  color: teal
+
+inputs:
+  provider:
+    description: Model provider (coral, openai). See providers/__init__.py.
+    required: false
+    default: coral
+  model:
+    description: Model name. Defaults to the provider's own default.
+    required: false
+    default: ""
+  base-url:
+    description: Override the provider's endpoint (self-hosted, proxy, staging).
+    required: false
+    default: ""
+  version:
+    description: wrasse version to install.
+    required: false
+    default: "0.1.0"
+  github-token:
+    description: Token used to read the PR and post the review.
+    required: false
+    default: ${{ github.token }}
+  max-tool-turns:
+    description: Model turns that may still call a tool.
+    required: false
+    default: "25"
+  wall-timeout:
+    description: Whole-review wall-clock budget, seconds.
+    required: false
+    default: "1200"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install wrasse
+      shell: bash
+      run: python -m pip install --disable-pip-version-check "wrasse==${{ inputs.version }}"
+
+    # The review never checks out or executes code from the pull request: the
+    # diff and every file the model reads come through the GitHub API, pinned
+    # to the PR's head sha. Keep it that way — see docs/trust-model.md.
+    - name: Review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        WRASSE_PROVIDER: ${{ inputs.provider }}
+        WRASSE_MAX_TOOL_TURNS: ${{ inputs.max-tool-turns }}
+        WRASSE_WALL_TIMEOUT: ${{ inputs.wall-timeout }}
+        INPUT_MODEL: ${{ inputs.model }}
+        INPUT_BASE_URL: ${{ inputs.base-url }}
+      run: |
+        args=(review --agent
+              --pr "${{ github.event.pull_request.number }}"
+              --provider "$WRASSE_PROVIDER")
+        [ -n "$INPUT_MODEL" ] && args+=(--model "$INPUT_MODEL")
+        [ -n "$INPUT_BASE_URL" ] && args+=(--base-url "$INPUT_BASE_URL")
+        wrasse "${args[@]}"
